@@ -9,12 +9,10 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-
-// firebase
+// Firebase
 #include <Firebase_ESP_Client.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
-
 
 #define API_KEY "AIzaSyDTX_U9v_x9fVE6RoTbiVNRRlZYYeJt7rg"
 #define USER_EMAIL "shaemsakib@gmail.com"
@@ -26,103 +24,89 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-
-// Variables to store Firebase data
+// Firebase Paths
 String uid;
 String basePath = "/FISH-TANK";
 String statusPath = basePath + "/status";
 String logsPath = basePath + "/logs";
 
-// GLOBAL LED
+// Global Actuator States
 bool g_led = false;
 bool g_pump = false;
 String g_servo = "idle";  // "idle", "activate", or "auto"
 
+// Last known states to detect changes
+bool last_led = false;
+bool last_pump = false;
+String last_servo = "";
+
+// NTP
 const char* ntpServer = "pool.ntp.org";
 
 // Temperature (DS18B20)
 #define ONE_WIRE_BUS 4
 
-// GLOBAL VARIABLE
-float g_phValue = 0.0f;  // holds the latest pH reading
+// Sensor Readings (dummy initialized)
+float g_phValue = 0.0f;
 float g_waterLevelIN = 0.0f;
 float g_waterLevelPercent = 0.0f;
 float g_tempC = 0.0f;
 
-
-// LED PIN
-constexpr int LED_PIN = 2;  
-
-
+// LED Pin
+constexpr int LED_PIN = 2;
 
 void setup() {
   Serial.begin(115200);
 
-  // LED pin
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  // Initialize Wifi Server
   initWiFi();
   configTime(6 * 3600, 0, ntpServer);
   initFirebase();
 }
 
-
-
-
 void loop() {
   fetchActuatorsStatus();
-  updateStatusToFirebase();  
-  addLogToFirebase();       
+  updateStatusToFirebase();
+  addLogToFirebase();
   controlLED();
-
-  delay(5000);
+  delay(5000); // Wait 5 seconds before next loop
 }
 
+// ========== Firebase Setup ==========
 
-
-// Function to initialize Firebase
 void initFirebase() {
   config.api_key = API_KEY;
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
-
-  // Assign the RTDB URL
   config.database_url = DATABASE_URL;
-  Firebase.reconnectWiFi(true);
 
-  // Set response size
+  Firebase.reconnectWiFi(true);
   fbdo.setResponseSize(4096);
   config.token_status_callback = tokenStatusCallback;
-
-  // Assign max retry for token generation
   config.max_token_generation_retry = 5;
 
-  // Start Firebase
   Firebase.begin(&config, &auth);
 
-  // Wait until UID is retrieved
-  Serial.println("Getting User UID");
+  Serial.println("Getting User UID...");
   while ((auth.token.uid) == "") {
     Serial.print('.');
     delay(1000);
   }
+
   uid = auth.token.uid.c_str();
   Serial.print("User UID: ");
   Serial.println(uid);
 }
 
+// ========== Actuator State Fetching ==========
 
-// FETCH DATA FROM FIREBASE
 void fetchActuatorsStatus() {
-  // Build C-strings for each child path
   String ledPath = statusPath + "/led";
   String pumpPath = statusPath + "/pump";
   String servoPath = statusPath + "/servo";
 
-  // 1) LED
-  // overload: bool getBool(FirebaseData*, const char*)
   if (Firebase.RTDB.getBool(&fbdo, ledPath.c_str())) {
     g_led = fbdo.boolData();
   } else {
@@ -130,7 +114,6 @@ void fetchActuatorsStatus() {
     return;
   }
 
-  // 2) Pump
   if (Firebase.RTDB.getBool(&fbdo, pumpPath.c_str())) {
     g_pump = fbdo.boolData();
   } else {
@@ -138,27 +121,28 @@ void fetchActuatorsStatus() {
     return;
   }
 
-  // 3) Servo
-  // we can use the 3-argument overload that writes directly into a String
   if (Firebase.RTDB.getString(&fbdo, servoPath.c_str(), &g_servo)) {
-    /* g_servo is now populated */
+    // Successfully read
   } else {
     Serial.println("Error reading Servo: " + fbdo.errorReason());
     return;
   }
 
-  // Print the globals
   Serial.println("=== Actuator Status ===");
   Serial.printf("LED:   %s\n", g_led ? "ON" : "OFF");
   Serial.printf("Pump:  %s\n", g_pump ? "ON" : "OFF");
-  Serial.printf("Servo: %s\n", g_servo.c_str());
-  Serial.println();
+  Serial.printf("Servo: %s\n\n", g_servo.c_str());
 }
 
+// ========== Firebase Update (Only on Change) ==========
 
 void updateStatusToFirebase() {
+  if (g_led == last_led && g_pump == last_pump && g_servo == last_servo) {
+    // No change in state, skip writing to Firebase
+    return;
+  }
+
   FirebaseJson status;
-  // Uncomment or use fetched actuator globals if you want to write them:
   status.set("led", g_led);
   status.set("pump", g_pump);
   status.set("servo", g_servo);
@@ -167,12 +151,17 @@ void updateStatusToFirebase() {
   status.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &status)) {
-    Serial.println("Status updated.");
+    Serial.println("Status updated to Firebase.");
+    // Update local memory
+    last_led = g_led;
+    last_pump = g_pump;
+    last_servo = g_servo;
   } else {
     Serial.println("Status update failed: " + fbdo.errorReason());
   }
 }
 
+// ========== Firebase Logging ==========
 
 void addLogToFirebase() {
   FirebaseJson log;
@@ -184,19 +173,19 @@ void addLogToFirebase() {
   log.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &log)) {
-    Serial.println("Log saved.");
+    Serial.println("Log saved to Firebase.");
   } else {
     Serial.println("Log save failed: " + fbdo.errorReason());
   }
 }
 
-
+// ========== Hardware Control ==========
 
 void controlLED() {
-  // HIGH when g_led==true, LOW otherwise
   digitalWrite(LED_PIN, g_led ? HIGH : LOW);
 }
 
+// ========== Time Utility ==========
 
 bool isTime(int h, int m) {
   struct tm t;
