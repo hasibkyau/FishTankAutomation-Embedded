@@ -75,10 +75,7 @@ void loop() {
   fetchActuatorsStatus();
   updateStatusToFirebase();  
   addLogToFirebase();       
-
-  // feedFish();
-  // feedFishAuto();
-  // controlLED();
+  controlLED();
 
   delay(5000);
 }
@@ -194,75 +191,13 @@ void addLogToFirebase() {
 }
 
 
-// ————— feedFish(): perform a one-time feeding cycle —————————————————
-void feedFish() {
-  if (g_servo == "activate") {
-    Serial.println("Feeding fish: opening feeder");
 
-    // Move to open position
-    feederServo.write(OPEN_ANGLE);
-    delay(FEED_DURATION);
-
-    // Return to idle/closed
-    feederServo.write(IDLE_ANGLE);
-    delay(200);
-
-    Serial.println("Feeding complete. Resetting servo status to idle");
-
-    // 1) Update Firebase so it won’t keep retriggering
-    FirebaseJson upd;
-    upd.set("servo", "idle");
-    if (!Firebase.RTDB.updateNode(&fbdo, statusPath.c_str(), &upd)) {
-      Serial.println("Error resetting servo status: " + fbdo.errorReason());
-    }
-
-    // 2) Update local global
-    g_servo = "idle";
-  }
-}
-
-
-// ─── New helper: directly reflect g_led to the hardware LED ───────────────
 void controlLED() {
   // HIGH when g_led==true, LOW otherwise
   digitalWrite(LED_PIN, g_led ? HIGH : LOW);
 }
 
 
-void feedFishAuto() {
-  if (g_servo != "auto") return;
-
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) return;
-
-  int H = timeinfo.tm_hour;
-  int M = timeinfo.tm_min;
-
-  // Reset flags at midnight
-  if (H == 0 && M == 0) {
-    fedMorning = fedEvening = false;
-  }
-
-  // Morning 08:00
-  if (isTime(8, 0) && !fedMorning) {
-    Serial.println("Auto-feed: Morning");
-    feederServo.write(OPEN_ANGLE);
-    delay(FEED_DURATION);
-    feederServo.write(IDLE_ANGLE);
-    fedMorning = true;
-  }
-
-  // Evening 18:00
-  if (isTime(18, 0) && !fedEvening) {
-    Serial.println("Auto-feed: Evening");
-    feederServo.write(OPEN_ANGLE);
-    delay(FEED_DURATION);
-    feederServo.write(IDLE_ANGLE);
-    fedEvening = true;
-  }
-}
-
-// ————————————— Helper: check exact hh:mm —————————————————————————
 bool isTime(int h, int m) {
   struct tm t;
   if (!getLocalTime(&t)) return false;
