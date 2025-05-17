@@ -33,7 +33,7 @@ String basePath = "/FISH-TANK";
 String statusPath = basePath + "/status";
 String logsPath = basePath + "/logs";
 
-// ——— Global “status” variables ——————————————————————————————————
+// GLOBAL LED
 bool g_led = false;
 bool g_pump = false;
 String g_servo = "idle";  // "idle", "activate", or "auto"
@@ -43,7 +43,7 @@ const char* ntpServer = "pool.ntp.org";
 // Temperature (DS18B20)
 #define ONE_WIRE_BUS 4
 
-// ─── Global Variable ───────────────────────────────────────────────────────
+// GLOBAL VARIABLE
 float g_phValue = 0.0f;  // holds the latest pH reading
 float g_waterLevelIN = 0.0f;
 float g_waterLevelPercent = 0.0f;
@@ -114,7 +114,7 @@ void initFirebase() {
 }
 
 
-// ————— Fetch into globals & print —————————————————————————————————
+// FETCH DATA FROM FIREBASE
 void fetchActuatorsStatus() {
   // Build C-strings for each child path
   String ledPath = statusPath + "/led";
