@@ -3,7 +3,7 @@
 #include <Adafruit_Sensor.h>
 #include "utils.h"
 #include "json.h"
-#include <ESP32Servo.h> 
+#include <ESP32Servo.h>
 
 // Temperature
 #include <OneWire.h>
@@ -34,27 +34,11 @@ String statusPath = basePath + "/status";
 String logsPath = basePath + "/logs";
 
 // ——— Global “status” variables ——————————————————————————————————
-bool   g_led             = false;
-bool   g_pump            = false;
+bool g_led = false;
+bool g_pump = false;
 String g_servo = "idle";  // "idle", "activate", or "auto"
 
 const char* ntpServer = "pool.ntp.org";
-
-
-// ─── Pin & Calibration Constants ───────────────────────────────────────────
-constexpr int PH_PIN = A0;            // Analog pin for pH sensor
-constexpr float PH_OFFSET = 32.878f;  // Calibration offset (b in pH = m·V + b)
-constexpr float PH_SLOPE = -5.70f;    // Calibration slope (m in pH = m·V + b)
-
-// Ultrasonic (water level)
-constexpr int TRIG_PIN = 18;
-constexpr int ECHO_PIN = 19;
-constexpr float TANK_HEIGHT_IN = 12.0f;  // total tank height in inches
-
-// ADC & sampling
-constexpr float VREF = 5.0f;
-constexpr int ADC_MAX = 1023;
-constexpr int NUM_SAMPLES = 10;
 
 // Temperature (DS18B20)
 #define ONE_WIRE_BUS 4
@@ -66,44 +50,15 @@ float g_waterLevelPercent = 0.0f;
 float g_tempC = 0.0f;
 
 
-// ─── OneWire & DallasTemperature Setup ─────────────────────────────────────
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
-
-
-
-#define SERVO_PIN        18
-constexpr int OPEN_ANGLE    = 90;      // adjust to your feeder’s “open” position
-constexpr int IDLE_ANGLE    =  0;      // “closed” position
-constexpr int FEED_DURATION = 3000;    // milliseconds to hold open
-
-// Flags to avoid double-feeding
-bool fedMorning = false;
-bool fedEvening = false;
-
-// Servo object
-Servo feederServo;
-
-
-// ─── At the top with your other pin defs ────────────────────────────────────
-constexpr int LED_PIN = 2;   // change to whichever GPIO you wired your LED to
-
+// LED PIN
+constexpr int LED_PIN = 2;  
 
 
 
 void setup() {
   Serial.begin(115200);
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-  sensors.begin();
 
-
-  // Servo setup — 50 Hz, with pulse widths 500–2400 μs
-  feederServo.setPeriodHertz(50);
-  feederServo.attach(SERVO_PIN, 500, 2400);
-  feederServo.write(IDLE_ANGLE);
-
-    // LED pin
+  // LED pin
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
@@ -114,148 +69,17 @@ void setup() {
 }
 
 
-// ─── Trimmed-Mean Filter ───────────────────────────────────────────────────
-float readTrimmedMean(int pin) {
-  int raw;
-  long sum = 0;
-  int minVal = ADC_MAX, maxVal = 0;
-
-  for (int i = 0; i < NUM_SAMPLES; i++) {
-    raw = analogRead(pin);
-    sum += raw;
-    if (raw < minVal) minVal = raw;
-    if (raw > maxVal) maxVal = raw;
-    delay(30);
-  }
-  // discard one min + one max sample
-  sum -= (minVal + maxVal);
-  return float(sum) / float(NUM_SAMPLES - 2);
-}
-
-// Read and compute pH
-float readPH() {
-  float avgRaw = readTrimmedMean(PH_PIN);
-  float voltage = avgRaw * VREF / float(ADC_MAX);
-  // linear calibration: pH = m·V + b  (here m = –5.70)
-  return -5.70f * voltage + PH_OFFSET;
-}
-
-// ─── Read water level (in inches & %) ──────────────────────────────────────
-void readWaterLevel() {
-  // trigger pulse
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  // measure echo (timeout 30 ms)
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  float distanceCM = (duration * 0.034f) / 2.0f;
-  float distanceIN = distanceCM / 2.54f;
-
-  // compute water height
-  float levelIN = TANK_HEIGHT_IN - distanceIN;
-  levelIN = constrain(levelIN, 0.0f, TANK_HEIGHT_IN);
-
-  g_waterLevelIN = levelIN;
-  g_waterLevelPercent = (levelIN / TANK_HEIGHT_IN) * 100.0f;
-}
-
-
-// ─── Read temperature (DS18B20) ─────────────────────────────────────────────
-void readTemperature() {
-  sensors.requestTemperatures();
-  float temp = sensors.getTempCByIndex(0);
-  if (temp == DEVICE_DISCONNECTED_C) {
-    // handle error if needed
-    g_tempC = NAN;
-  } else {
-    g_tempC = temp;
-  }
-}
-
-
-// ─── Read all sensors and store in globals ──────────────────────────────────
-void readAllSensors() {
-  g_phValue = readPH();
-  readWaterLevel();
-  readTemperature();
-}
-
-void showSensorsValue() {
-  Serial.print("pH: ");
-  Serial.println(g_phValue, 2);
-
-  Serial.print("Water Level: ");
-  Serial.print(g_waterLevelIN, 2);
-  Serial.print(" in (");
-  Serial.print(g_waterLevelPercent, 1);
-  Serial.println("%)");
-
-  if (isnan(g_tempC)) {
-    Serial.println("Temperature: Error reading sensor");
-  } else {
-    Serial.print("Temperature: ");
-    Serial.print(g_tempC, 2);
-    Serial.println(" °C");
-  }
-
-  Serial.println();
-}
-
 
 
 void loop() {
-  readAllSensors();
-  showSensorsValue();
   fetchActuatorsStatus();
+  updateStatusToFirebase();  
+  addLogToFirebase();       
 
+  // feedFish();
+  // feedFishAuto();
+  // controlLED();
 
-  updateStatusToFirebase(); // overwrite the status node
-  addLogToFirebase();       // push a new log entry
-
-
-  // If commanded, feed the fish
-  feedFish();
-  feedFishAuto();
-  controlLED();
-
-
-  // String dateTime = getDateTimeString();
-  // String date = dateTime.substring(0, 10);
-  // String dateString = getDateString(dateTime);
-
-  // // === Update status ===
-  // FirebaseJson status;
-  // // status.set("led", false);     // Default value
-  // // status.set("pump", false);    // Default value
-  // // status.set("servo", "idle");  // Default value
-  // status.set("pH", g_phValue);
-  // status.set("temperature", g_tempC);
-  // status.set("waterLevel", g_waterLevelPercent);
-
-  // if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &status)) {
-  //   Serial.println("Status updated.");
-  // } else {
-  //   Serial.println(fbdo.errorReason());
-  // }
-
-  // // === Store logs ===
-  // FirebaseJson log;
-  // log.set("led", false);
-  // log.set("pump", false);
-  // log.set("servo", "idle");
-  // log.set("pH", g_phValue);
-  // log.set("temperature", g_tempC);
-  // log.set("waterLevel", g_waterLevelPercent);
-
-
-  // if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &log)) {
-  //   Serial.println("Log saved.");
-  // } else {
-  //   Serial.println(fbdo.errorReason());
-  // }
   delay(5000);
 }
 
@@ -295,9 +119,9 @@ void initFirebase() {
 
 // ————— Fetch into globals & print —————————————————————————————————
 void fetchActuatorsStatus() {
- // Build C-strings for each child path
-  String ledPath   = statusPath + "/led";
-  String pumpPath  = statusPath + "/pump";
+  // Build C-strings for each child path
+  String ledPath = statusPath + "/led";
+  String pumpPath = statusPath + "/pump";
   String servoPath = statusPath + "/servo";
 
   // 1) LED
@@ -328,8 +152,8 @@ void fetchActuatorsStatus() {
 
   // Print the globals
   Serial.println("=== Actuator Status ===");
-  Serial.printf("LED:   %s\n", g_led   ? "ON"  : "OFF");
-  Serial.printf("Pump:  %s\n", g_pump  ? "ON"  : "OFF");
+  Serial.printf("LED:   %s\n", g_led ? "ON" : "OFF");
+  Serial.printf("Pump:  %s\n", g_pump ? "ON" : "OFF");
   Serial.printf("Servo: %s\n", g_servo.c_str());
   Serial.println();
 }
@@ -338,13 +162,12 @@ void fetchActuatorsStatus() {
 void updateStatusToFirebase() {
   FirebaseJson status;
   // Uncomment or use fetched actuator globals if you want to write them:
-  // status.set("led", g_led);
-  // status.set("pump", g_pump);
-  // status.set("servo", g_servo);
-
-  status.set("pH",          g_phValue);
+  status.set("led", g_led);
+  status.set("pump", g_pump);
+  status.set("servo", g_servo);
+  status.set("pH", g_phValue);
   status.set("temperature", g_tempC);
-  status.set("waterLevel",  g_waterLevelPercent);
+  status.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &status)) {
     Serial.println("Status updated.");
@@ -356,12 +179,12 @@ void updateStatusToFirebase() {
 
 void addLogToFirebase() {
   FirebaseJson log;
-  log.set("led",          g_led);
-  log.set("pump",         g_pump);
-  log.set("servo",        g_servo);
-  log.set("pH",           g_phValue);
-  log.set("temperature",  g_tempC);
-  log.set("waterLevel",   g_waterLevelPercent);
+  log.set("led", g_led);
+  log.set("pump", g_pump);
+  log.set("servo", g_servo);
+  log.set("pH", g_phValue);
+  log.set("temperature", g_tempC);
+  log.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &log)) {
     Serial.println("Log saved.");
@@ -445,4 +268,3 @@ bool isTime(int h, int m) {
   if (!getLocalTime(&t)) return false;
   return (t.tm_hour == h && t.tm_min == m);
 }
-
