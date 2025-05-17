@@ -3,7 +3,7 @@
 #include <Adafruit_Sensor.h>
 #include "utils.h"
 #include "json.h"
-#include <ESP32Servo.h> 
+#include <ESP32Servo.h>
 
 // Temperature
 #include <OneWire.h>
@@ -34,8 +34,8 @@ String statusPath = basePath + "/status";
 String logsPath = basePath + "/logs";
 
 // ——— Global “status” variables ——————————————————————————————————
-bool   g_led             = false;
-bool   g_pump            = false;
+bool g_led = false;
+bool g_pump = false;
 String g_servo = "idle";  // "idle", "activate", or "auto"
 
 const char* ntpServer = "pool.ntp.org";
@@ -72,10 +72,10 @@ DallasTemperature sensors(&oneWire);
 
 
 
-#define SERVO_PIN        18
-constexpr int OPEN_ANGLE    = 90;      // adjust to your feeder’s “open” position
-constexpr int IDLE_ANGLE    =  0;      // “closed” position
-constexpr int FEED_DURATION = 3000;    // milliseconds to hold open
+#define SERVO_PIN 18
+constexpr int OPEN_ANGLE = 90;       // adjust to your feeder’s “open” position
+constexpr int IDLE_ANGLE = 0;        // “closed” position
+constexpr int FEED_DURATION = 3000;  // milliseconds to hold open
 
 // Flags to avoid double-feeding
 bool fedMorning = false;
@@ -86,7 +86,7 @@ Servo feederServo;
 
 
 // ─── At the top with your other pin defs ────────────────────────────────────
-constexpr int LED_PIN = 2;   // change to whichever GPIO you wired your LED to
+constexpr int LED_PIN = 2;  // change to whichever GPIO you wired your LED to
 
 
 
@@ -103,7 +103,7 @@ void setup() {
   feederServo.attach(SERVO_PIN, 500, 2400);
   feederServo.write(IDLE_ANGLE);
 
-    // LED pin
+  // LED pin
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
@@ -209,11 +209,8 @@ void showSensorsValue() {
 void loop() {
   readAllSensors();
   showSensorsValue();
+
   fetchActuatorsStatus();
-
-
-  updateStatusToFirebase(); // overwrite the status node
-  addLogToFirebase();       // push a new log entry
 
 
   // If commanded, feed the fish
@@ -222,40 +219,6 @@ void loop() {
   controlLED();
 
 
-  // String dateTime = getDateTimeString();
-  // String date = dateTime.substring(0, 10);
-  // String dateString = getDateString(dateTime);
-
-  // // === Update status ===
-  // FirebaseJson status;
-  // // status.set("led", false);     // Default value
-  // // status.set("pump", false);    // Default value
-  // // status.set("servo", "idle");  // Default value
-  // status.set("pH", g_phValue);
-  // status.set("temperature", g_tempC);
-  // status.set("waterLevel", g_waterLevelPercent);
-
-  // if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &status)) {
-  //   Serial.println("Status updated.");
-  // } else {
-  //   Serial.println(fbdo.errorReason());
-  // }
-
-  // // === Store logs ===
-  // FirebaseJson log;
-  // log.set("led", false);
-  // log.set("pump", false);
-  // log.set("servo", "idle");
-  // log.set("pH", g_phValue);
-  // log.set("temperature", g_tempC);
-  // log.set("waterLevel", g_waterLevelPercent);
-
-
-  // if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &log)) {
-  //   Serial.println("Log saved.");
-  // } else {
-  //   Serial.println(fbdo.errorReason());
-  // }
   delay(5000);
 }
 
@@ -295,9 +258,9 @@ void initFirebase() {
 
 // ————— Fetch into globals & print —————————————————————————————————
 void fetchActuatorsStatus() {
- // Build C-strings for each child path
-  String ledPath   = statusPath + "/led";
-  String pumpPath  = statusPath + "/pump";
+  // Build C-strings for each child path
+  String ledPath = statusPath + "/led";
+  String pumpPath = statusPath + "/pump";
   String servoPath = statusPath + "/servo";
 
   // 1) LED
@@ -328,23 +291,25 @@ void fetchActuatorsStatus() {
 
   // Print the globals
   Serial.println("=== Actuator Status ===");
-  Serial.printf("LED:   %s\n", g_led   ? "ON"  : "OFF");
-  Serial.printf("Pump:  %s\n", g_pump  ? "ON"  : "OFF");
+  Serial.printf("LED:   %s\n", g_led ? "ON" : "OFF");
+  Serial.printf("Pump:  %s\n", g_pump ? "ON" : "OFF");
   Serial.printf("Servo: %s\n", g_servo.c_str());
   Serial.println();
+
+  updateStatusToFirebase();  // overwrite the status node
+  addLogToFirebase();        // push a new log entry
 }
 
 
 void updateStatusToFirebase() {
   FirebaseJson status;
   // Uncomment or use fetched actuator globals if you want to write them:
-  // status.set("led", g_led);
-  // status.set("pump", g_pump);
-  // status.set("servo", g_servo);
-
-  status.set("pH",          g_phValue);
+  status.set("led", g_led);
+  status.set("pump", g_pump);
+  status.set("servo", g_servo);
+  status.set("pH", g_phValue);
   status.set("temperature", g_tempC);
-  status.set("waterLevel",  g_waterLevelPercent);
+  status.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.setJSON(&fbdo, statusPath.c_str(), &status)) {
     Serial.println("Status updated.");
@@ -356,12 +321,12 @@ void updateStatusToFirebase() {
 
 void addLogToFirebase() {
   FirebaseJson log;
-  log.set("led",          g_led);
-  log.set("pump",         g_pump);
-  log.set("servo",        g_servo);
-  log.set("pH",           g_phValue);
-  log.set("temperature",  g_tempC);
-  log.set("waterLevel",   g_waterLevelPercent);
+  log.set("led", g_led);
+  log.set("pump", g_pump);
+  log.set("servo", g_servo);
+  log.set("pH", g_phValue);
+  log.set("temperature", g_tempC);
+  log.set("waterLevel", g_waterLevelPercent);
 
   if (Firebase.RTDB.pushJSON(&fbdo, logsPath.c_str(), &log)) {
     Serial.println("Log saved.");
@@ -445,4 +410,3 @@ bool isTime(int h, int m) {
   if (!getLocalTime(&t)) return false;
   return (t.tm_hour == h && t.tm_min == m);
 }
-
