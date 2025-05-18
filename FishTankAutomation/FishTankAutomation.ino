@@ -52,13 +52,16 @@ float g_waterLevelIN = 0.0f;
 float g_waterLevelPercent = 0.0f;
 float g_tempC = 0.0f;
 
-// LED Pin
+// ESP Pin Distrubution
 constexpr int LED_PIN = 2;
+constexpr int WATER_PUMP_PIN = 16;
 
 void setup() {
   Serial.begin(115200);
 
   pinMode(LED_PIN, OUTPUT);
+  pinMode(WATER_PUMP_PIN, OUTPUT);
+  digitalWrite(WATER_PUMP_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
   initWiFi();
@@ -183,6 +186,7 @@ void addLogToFirebase() {
 
 void controlLED() {
   digitalWrite(LED_PIN, g_led ? HIGH : LOW);
+  digitalWrite(WATER_PUMP_PIN, g_pump ? HIGH : LOW); //ternary operator
 }
 
 // ========== Time Utility ==========
