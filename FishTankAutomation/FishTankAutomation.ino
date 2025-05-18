@@ -56,6 +56,15 @@ float g_tempC = 0.0f;
 constexpr int LED_PIN = 2;
 constexpr int WATER_PUMP_PIN = 16;
 
+//Servo pin and variables
+#define SERVO_PIN        17
+constexpr int open_angle    = 90;      // adjust to your feeder’s “open” position
+constexpr int idle_angle    =  0;      // “closed” position
+constexpr int feed_duration = 3000;    // milliseconds to hold open
+
+// Servo object
+Servo feederServo;
+
 void setup() {
   Serial.begin(115200);
 
@@ -64,16 +73,51 @@ void setup() {
   digitalWrite(WATER_PUMP_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
+  // Servo setup — 50 Hz, with pulse widths 500–2400 μs
+  feederServo.setPeriodHertz(50);
+  feederServo.attach(SERVO_PIN, 500, 2400);
+  feederServo.write(idle_angle);
+
   initWiFi();
   configTime(6 * 3600, 0, ntpServer);
   initFirebase();
 }
 
+// Fish Feed
+void feedFish() {
+  if (g_servo == "activate") {
+    Serial.println("Feeding fish: opening feeder");
+
+    // Move to open position
+    feederServo.write(open_angle);
+    delay(feed_duration);
+
+    // Return to idle/closed
+    feederServo.write(idle_angle);
+    delay(200);
+
+    Serial.println("Feeding complete. Resetting servo status to idle");
+
+    // 1) Update Firebase so it won’t keep retriggering
+    FirebaseJson upd;
+    upd.set("servo", "idle");
+    if (!Firebase.RTDB.updateNode(&fbdo, statusPath.c_str(), &upd)) {
+      Serial.println("Error resetting servo status: " + fbdo.errorReason());
+    }
+
+    // 2) Update local global
+    g_servo = "idle";
+  }
+}
+
+
 void loop() {
   fetchActuatorsStatus();
   updateStatusToFirebase();
   addLogToFirebase();
-  controlLED();
+  ControlActuators();
+  feedFish();
+  
   delay(5000); // Wait 5 seconds before next loop
 }
 
@@ -184,7 +228,7 @@ void addLogToFirebase() {
 
 // ========== Hardware Control ==========
 
-void controlLED() {
+void ControlActuators() {
   digitalWrite(LED_PIN, g_led ? HIGH : LOW);
   digitalWrite(WATER_PUMP_PIN, g_pump ? HIGH : LOW); //ternary operator
 }
