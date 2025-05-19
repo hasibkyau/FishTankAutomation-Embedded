@@ -65,6 +65,12 @@ constexpr int feed_duration = 3000;    // milliseconds to hold open
 // Servo object
 Servo feederServo;
 
+
+// Ultrasonic (water level)
+constexpr int TRIG_PIN = 18;
+constexpr int ECHO_PIN = 19;
+constexpr float tank_height_inch = 12.0f;  // total tank height in inches
+
 void setup() {
   Serial.begin(115200);
 
@@ -72,6 +78,10 @@ void setup() {
   pinMode(WATER_PUMP_PIN, OUTPUT);
   digitalWrite(WATER_PUMP_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
+
+  // Sonor Sensor
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
 
   // Servo setup — 50 Hz, with pulse widths 500–2400 μs
   feederServo.setPeriodHertz(50);
@@ -111,14 +121,38 @@ void feedFish() {
 }
 
 
+void readWaterLevel() {
+  // trigger pulse
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // measure echo (timeout 30 ms)
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  float distanceCM = (duration * 0.034f) / 2.0f;
+  float distanceIN = distanceCM / 2.54f;
+
+  // compute water height
+  float levelIN = tank_height_inch - distanceIN;
+  levelIN = constrain(levelIN, 0.0f, tank_height_inch);
+
+  g_waterLevelIN = levelIN;
+  g_waterLevelPercent = (levelIN / tank_height_inch) * 100.0f;
+}
+
+
 void loop() {
   fetchActuatorsStatus();
   updateStatusToFirebase();
   addLogToFirebase();
   ControlActuators();
   feedFish();
-  
-  delay(5000); // Wait 5 seconds before next loop
+
+  readWaterLevel();
+
+  delay(1000); // Wait 5 seconds before next loop
 }
 
 // ========== Firebase Setup ==========
