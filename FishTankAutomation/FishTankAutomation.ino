@@ -140,6 +140,11 @@ void readWaterLevel() {
 
   g_waterLevelIN = levelIN;
   g_waterLevelPercent = (levelIN / tank_height_inch) * 100.0f;
+
+  Serial.print("Water Level: ");
+  Serial.print(g_waterLevelIN);
+  Serial.print(" Inch  | ");
+  Serial.println(g_waterLevelPercent);
 }
 
 
