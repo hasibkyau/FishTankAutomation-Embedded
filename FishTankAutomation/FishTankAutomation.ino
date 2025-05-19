@@ -67,8 +67,8 @@ Servo feederServo;
 
 
 // Ultrasonic (water level)
-constexpr int TRIG_PIN = 18;
-constexpr int ECHO_PIN = 19;
+constexpr int TRIG_PIN = 14;
+constexpr int ECHO_PIN = 27;
 constexpr float tank_height_inch = 12.0f;  // total tank height in inches
 
 void setup() {
